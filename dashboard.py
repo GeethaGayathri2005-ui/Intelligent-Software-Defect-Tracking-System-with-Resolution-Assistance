@@ -20,7 +20,7 @@ from sklearn.ensemble import RandomForestClassifier
 # Page Configuration & Light Bright Theme Styling
 # ---------------------------------------------------------
 st.set_page_config(
-    page_title="Bug Life Cycle Management Platform",
+    page_title="Intelligent Software Defect Tracking System with Resolution Assistance",
     page_icon="🐞",
     layout="wide",
     initial_sidebar_state="expanded"
