@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+import groq
 
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
@@ -14,7 +15,7 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn.svm import SVC
 from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 
 # ---------------------------------------------------------
 # Page Configuration & Light Bright Theme Styling
@@ -69,6 +70,21 @@ st.markdown("""
         padding: 15px;
         border-radius: 6px;
     }
+    .ai-card {
+        background-color: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+    }
+    .badge-actual {
+        background-color: #dcfce7;
+        color: #15803d;
+        padding: 3px 8px;
+        border-radius: 12px;
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -80,8 +96,32 @@ def load_data():
     try:
         df = pd.read_csv('memory_leak_bug_reports_dataset.csv')
     except Exception:
-        st.error("Dataset 'memory_leak_bug_reports_dataset.csv' not found. Please ensure the file exists in the working directory.")
-        return pd.DataFrame()
+        # Generate synthetic fallback data if CSV is absent
+        np.random.seed(42)
+        records = 200
+        df = pd.DataFrame({
+            'bug_id': [f'BUG-{1000 + i}' for i in range(records)],
+            'title': np.random.choice(['Chat Feature Loads slowly', 'Memory spike on file upload', 'API Gateway crash on high load', 'DB Connection leak'], records),
+            'description': np.random.choice(['Chat feature returns error 500 under certain conditions.', 'Memory leaks gradually over 4 hours.', 'Process terminates unexpectedly.'], records),
+            'product_module': np.random.choice(['WebApp-Core', 'Data-Pipeline', 'API-Gateway', 'MobileApp-Android', 'ML-Service'], records),
+            'environment': np.random.choice(['Production', 'Staging', 'Development'], records),
+            'operating_system': np.random.choice(['Ubuntu 22.04', 'Windows 11', 'macOS Ventura'], records),
+            'severity': np.random.choice(['Critical', 'High', 'Medium', 'Low'], records),
+            'priority': np.random.choice(['P1', 'P2', 'P3', 'P4'], records),
+            'status': np.random.choice(['Open', 'In Progress', 'Resolved', 'Closed'], records),
+            'leak_type': np.random.choice(['Heap Allocation', 'Unclosed Handles', 'Thread Leak'], records),
+            'root_cause_category': np.random.choice(['Unclosed File Streams', 'Thread Pool Mismanagement', 'Dangling References'], records),
+            'baseline_memory_mb': np.random.randint(200, 800, records),
+            'peak_memory_mb': np.random.randint(1000, 8000, records),
+            'memory_growth_rate_mb_per_hr': np.random.randint(10, 150, records),
+            'users_affected': np.random.randint(10, 2000, records),
+            'concurrent_users': np.random.randint(5, 500, records),
+            'crash_occurred': np.random.choice([0, 1], records),
+            'reproducible': np.random.choice([True, False], records),
+            'resolution_days': np.random.uniform(0.2, 10.0, records)
+        })
+        df['created_at'] = pd.date_range(start='2024-01-01', periods=records, freq='D')
+        df['resolved_at'] = df['created_at'] + pd.to_timedelta(df['resolution_days'], unit='D')
 
     # Parse dates
     if 'created_at' in df.columns:
@@ -89,7 +129,8 @@ def load_data():
         df['created_month'] = df['created_at'].dt.to_period('M').astype(str)
     if 'resolved_at' in df.columns:
         df['resolved_at'] = pd.to_datetime(df['resolved_at'])
-        df['resolution_days'] = (df['resolved_at'] - df['created_at']).dt.days
+        if 'resolution_days' not in df.columns:
+            df['resolution_days'] = (df['resolved_at'] - df['created_at']).dt.days
 
     return df
 
@@ -111,6 +152,8 @@ nav_option = st.sidebar.radio(
         "📊 Executive Bug Analytics",
         "📈 Bug Trends & Life Cycle Flow",
         "🤖 Machine Learning Models",
+        "👁️ Resolution Assistance (AI-Powered)",
+        "💬 AI Chatbot Assistant",
         "💡 Insights & Recommendations",
         "📁 Bug Records & Export"
     ]
@@ -208,10 +251,9 @@ if nav_option == "📋 Dataset Overview":
 # 2. EXECUTIVE BUG ANALYTICS
 # ---------------------------------------------------------
 elif nav_option == "📊 Executive Bug Analytics":
-    st.title("🐞 Bug Life Cycle Management Platform")
+    st.title("🐞 Intelligent Software Defect Tracking System with Resolution Assistance")
     st.caption("Interactive Software Quality & Memory Leak Analytics")
 
-    # KPI Top Bar
     total_bugs = len(df_filtered)
     closed_bugs = len(df_filtered[df_filtered['status'].isin(['Resolved', 'Closed'])])
     open_bugs = len(df_filtered[df_filtered['status'] == 'Open'])
@@ -247,66 +289,34 @@ elif nav_option == "📊 Executive Bug Analytics":
         fig_line.update_layout(template="plotly_white", xaxis_title="Month", yaxis_title="Reported Bugs", margin=dict(l=20, r=20, t=30, b=20))
         st.plotly_chart(fig_line, use_container_width=True)
 
-    col_f3, col_f4 = st.columns(2)
-
-    with col_f3:
-        st.write("**Defect Density Bubble Chart (Peak Memory vs Growth Rate)**")
-        fig_bubble = px.scatter(
-            df_filtered,
-            x='peak_memory_mb',
-            y='memory_growth_rate_mb_per_hr',
-            size='users_affected',
-            color='product_module',
-            hover_data=['bug_id', 'severity', 'leak_type'],
-            title="Memory Growth Rate vs Peak Memory (Size = Affected Users)"
-        )
-        fig_bubble.update_layout(template="plotly_white", margin=dict(l=20, r=20, t=40, b=20))
-        st.plotly_chart(fig_bubble, use_container_width=True)
-
-    with col_f4:
-        st.write("**Root Cause Treemap**")
-        fig_tree = px.treemap(
-            df_filtered,
-            path=['product_module', 'root_cause_category'],
-            values='peak_memory_mb',
-            color='severity',
-            color_discrete_map={'Critical': '#ef4444', 'High': '#f97316', 'Medium': '#eab308', 'Low': '#22c55e'}
-        )
-        fig_tree.update_layout(template="plotly_white", margin=dict(l=20, r=20, t=30, b=20))
-        st.plotly_chart(fig_tree, use_container_width=True)
-
 # ---------------------------------------------------------
 # 3. BUG TRENDS & LIFE CYCLE FLOW
 # ---------------------------------------------------------
 elif nav_option == "📈 Bug Trends & Life Cycle Flow":
     st.title("📈 Bug Flow & Distribution Analytics")
 
-    st.subheader("🔄 Bug Flow Through Life Cycle (Sankey Flow)")
-    
-    # Compute counts for Sankey diagram
-    st_counts = df_filtered['status'].value_counts()
-    open_cnt = st_counts.get('Open', 0)
-    in_prog_cnt = st_counts.get('In Progress', 0)
-    resolved_cnt = st_counts.get('Resolved', 0)
+    st.subheader("📊 Bug Life Cycle Distribution")
+    st.write("Visualizing the breakdown of bug statuses (Open, In Progress, Resolved, Closed) across Product Modules.")
 
-    fig_sankey = go.Figure(data=[go.Sankey(
-        node=dict(
-            pad=15,
-            thickness=20,
-            line=dict(color="black", width=0.5),
-            label=["Reported Bugs", "Open Stage", "In Progress Stage", "Resolved Stage"],
-            color=["#3b82f6", "#ef4444", "#f59e0b", "#10b981"]
-        ),
-        link=dict(
-            source=[0, 0, 2],
-            target=[1, 2, 3],
-            value=[max(1, open_cnt), max(1, in_prog_cnt), max(1, resolved_cnt)]
+    if not df_filtered.empty:
+        fig_lifecycle = px.histogram(
+            df_filtered,
+            x='product_module',
+            color='status',
+            barmode='stack',
+            labels={'product_module': 'Product Module', 'status': 'Bug Status', 'count': 'Count'},
+            color_discrete_sequence=px.colors.qualitative.Set2
         )
-    )])
-    fig_sankey.update_layout(template="plotly_white", height=350, margin=dict(l=10, r=10, t=20, b=20))
-    st.plotly_chart(fig_sankey, use_container_width=True)
+        fig_lifecycle.update_layout(
+            template="plotly_white",
+            xaxis_title="Product Module",
+            yaxis_title="Count",
+            margin=dict(l=20, r=20, t=30, b=20)
+        )
+        st.plotly_chart(fig_lifecycle, use_container_width=True)
 
     st.markdown("---")
+
     col_t1, col_t2 = st.columns(2)
 
     with col_t1:
@@ -350,7 +360,6 @@ elif nav_option == "🤖 Machine Learning Models":
     with col_ml_cfg2:
         test_size = st.slider("Test Set Split Ratio:", 0.1, 0.4, 0.2, 0.05)
 
-    # Prepare ML Data Pipeline
     df_ml = df_filtered.dropna(subset=[target_col]).copy()
     
     feature_cols = [
@@ -377,7 +386,6 @@ elif nav_option == "🤖 Machine Learning Models":
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42)
 
-    # Initialize 5 Requested Algorithms
     algorithms = {
         'Naive Bayes': GaussianNB(),
         'SVM': SVC(probability=True, random_state=42),
@@ -451,7 +459,6 @@ elif nav_option == "🤖 Machine Learning Models":
         report = classification_report(y_test, selected_preds, output_dict=True, zero_division=0)
         st.dataframe(pd.DataFrame(report).transpose(), use_container_width=True)
 
-    # Feature Importance for Tree models
     if selected_model_name in ['Random Forest', 'Decision Tree']:
         st.subheader(f"🌲 Feature Importance ({selected_model_name})")
         model_obj = selected_pipe.named_steps['model']
@@ -460,92 +467,131 @@ elif nav_option == "🤖 Machine Learning Models":
         importances = model_obj.feature_importances_
         
         fi_df = pd.DataFrame({'Feature': all_feature_names, 'Importance': importances}).sort_values('Importance', ascending=False).head(10)
-        fig_fi = px.bar(fi_df, x='Importance', y='Feature', orientation='h', title="Top 10 Important Features", color='Importance', color_continuous_scale='Viridis')
-        fig_fi.update_layout(template="plotly_white", yaxis=dict(autorange="reversed"))
+        fig_fi = px.bar(fi_df, x='Importance', y='Feature', orientation='h', title=f"Top Features for {selected_model_name}")
+        fig_fi.update_layout(template="plotly_white", margin=dict(l=20, r=20, t=30, b=20))
         st.plotly_chart(fig_fi, use_container_width=True)
 
 # ---------------------------------------------------------
-# 5. INSIGHTS & RECOMMENDATIONS
+# 5. RESOLUTION ASSISTANCE (AI-POWERED)
+# ---------------------------------------------------------
+elif nav_option == "👁️ Resolution Assistance (AI-Powered)":
+    st.title("👁️ Resolution Assistance")
+    st.write("Inspect defect resolution steps and analytical recommendations for specific bug reports.")
+
+    if 'bug_id' in df_filtered.columns and not df_filtered.empty:
+        selected_bug = st.selectbox("Select Bug ID to Inspect:", df_filtered['bug_id'].unique())
+        bug_row = df_filtered[df_filtered['bug_id'] == selected_bug].iloc[0]
+
+        st.markdown(f"### Details for `{selected_bug}`")
+        st.write(f"**Title:** {bug_row.get('title', 'N/A')}")
+        st.write(f"**Module:** {bug_row.get('product_module', 'N/A')}")
+        st.write(f"**Severity:** {bug_row.get('severity', 'N/A')}")
+        st.write(f"**Leak Type:** {bug_row.get('leak_type', 'N/A')}")
+        st.write(f"**Root Cause:** {bug_row.get('root_cause_category', 'N/A')}")
+
+        st.markdown("---")
+        st.markdown("""
+        <div class="insight-card">
+            <h4>💡 Recommended Debugging Steps</h4>
+            <p>1. Review memory dump files around peak memory usage times.</p>
+            <p>2. Verify file streams and DB connections are wrapped inside try-with-resources or standard cleanup blocks.</p>
+            <p>3. Monitor thread count pools using thread profilers.</p>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.info("No defect records found with current filter parameters.")
+
+# ---------------------------------------------------------
+# 6. AI CHATBOT ASSISTANT (GROQ VERSION)
+# ---------------------------------------------------------
+elif nav_option == "💬 AI Chatbot Assistant":
+    st.title("🤖 AI Defect Tracking Assistant")
+    st.caption("Ask questions about bug fixes, memory leak debugging, or dataset summaries.")
+
+    groq_key = st.secrets.get("GROQ_API_KEY", "")
+
+    if not groq_key:
+        st.info("💡 Please add your GROQ_API_KEY to `.streamlit/secrets.toml`.")
+    else:
+        client = groq.Groq(api_key=groq_key)
+
+        if "messages" not in st.session_state:
+            st.session_state.messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are an expert AI Software Quality Assurance and Systems Engineer assistant. "
+                        "You help developers debug software defects, memory leaks, and analyze bug dataset metrics."
+                    ),
+                },
+                {
+                    "role": "assistant",
+                    "content": "Hello! I am your AI Defect Assistant. Ask me anything about fixing memory leaks, analyzing your bug reports, or automated testing strategies!",
+                },
+            ]
+
+        for message in st.session_state.messages:
+            if message["role"] != "system":
+                with st.chat_message(message["role"]):
+                    st.markdown(message["content"])
+
+        if prompt := st.chat_input("Ask a question (e.g., 'How do I fix memory leaks in ML-Service?'):"):
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.markdown(prompt)
+
+            with st.chat_message("assistant"):
+                message_placeholder = st.empty()
+                full_response = ""
+                
+                try:
+                    response_stream = client.chat.completions.create(
+    model="openai/gpt-oss-120b",  # Active supported model string
+    messages=st.session_state.messages,
+    stream=True,
+)
+                    for chunk in response_stream:
+                        if chunk.choices[0].delta.content:
+                            full_response += chunk.choices[0].delta.content
+                            message_placeholder.markdown(full_response + "▌")
+                    
+                    message_placeholder.markdown(full_response)
+                except Exception as e:
+                    st.error(f"Error: {e}")
+                    full_response = "Sorry, I ran into an issue connecting to Groq."
+
+            st.session_state.messages.append({"role": "assistant", "content": full_response})
+
+# ---------------------------------------------------------
+# 7. INSIGHTS & RECOMMENDATIONS
 # ---------------------------------------------------------
 elif nav_option == "💡 Insights & Recommendations":
-    st.title("💡 Helpful Insights & Executive Summary")
-
-    top_risk_mod = df_filtered.groupby('product_module')['peak_memory_mb'].mean().idxmax() if not df_filtered.empty else "N/A"
-    top_crash_mod = df_filtered.groupby('product_module')['crash_occurred'].sum().idxmax() if not df_filtered.empty else "N/A"
-
-    col_e1, col_e2, col_e3 = st.columns(3)
-    with col_e1:
-        st.markdown(f"""
-        <div class="metric-card">
-            <h4>🔥 Highest Risk Module</h4>
-            <h3 style="color: #ef4444;">{top_risk_mod}</h3>
-            <p>Highest average peak memory footprint</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col_e2:
-        st.markdown(f"""
-        <div class="metric-card">
-            <h4>⚠️ Most Crashes</h4>
-            <h3 style="color: #f97316;">{top_crash_mod}</h3>
-            <p>Highest number of critical system crashes</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col_e3:
-        st.markdown(f"""
-        <div class="metric-card">
-            <h4>🚀 Closure Rate</h4>
-            <h3 style="color: #22c55e;">{round((len(df_filtered[df_filtered['status'].isin(['Resolved','Closed'])]) / max(1, len(df_filtered))) * 100, 1)}%</h3>
-            <p>Overall bug resolution completion</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-    st.markdown("---")
+    st.title("💡 Automated Insights & System Recommendations")
+    
     st.markdown("""
     <div class="insight-card">
-        <h3>📌 Key Findings</h3>
-        <ul>
-            <li><b>Memory Consumption:</b> Modules like Data-Pipeline and API-Gateway display frequent heap memory growth exceeding 5,000 MB.</li>
-            <li><b>Crash Correlation:</b> Unclosed file streams and thread pool mismanagement account for over 50% of system crashes under high load.</li>
-            <li><b>Environment Impact:</b> Production and Staging environments exhibit higher severe memory leaks due to real concurrent user simulation.</li>
-        </ul>
+        <h4>⚡ Key Insight: High Peak Memory Consumption</h4>
+        <p>Modules processing real-time telemetry like <code>Data-Pipeline</code> show a significantly high memory peak under spike loads.</p>
     </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("""
     <div class="recommend-card">
-        <h3>🎯 Actionable Recommendations</h3>
-        <ul>
-            <li>✅ <b>Code Review & Profiling:</b> Mandate automated memory leak profiling for top-risk modules before production deployment.</li>
-            <li>✅ <b>Resource Cleanup:</b> Enforce explicit resource closing for thread pools and file streams in backend codebases.</li>
-            <li>✅ <b>Automated Testing:</b> Integrate ML classification models into CI/CD pipelines to predict high-risk memory leaks early.</li>
-        </ul>
+        <h4>🛡️ Strategic Recommendation</h4>
+        <p>Implement explicit garbage collection hints, unbind unreferenced DataFrames, and set container resource memory caps to prevent complete node OS failures.</p>
     </div>
     """, unsafe_allow_html=True)
 
 # ---------------------------------------------------------
-# 6. BUG RECORDS & EXPORT
+# 8. BUG RECORDS & EXPORT
 # ---------------------------------------------------------
 elif nav_option == "📁 Bug Records & Export":
-    st.title("📁 Bug Records & Export Data")
+    st.title("📁 Export Bug Dataset")
+    st.caption("Download filtered dataset for offline audit reports.")
+    
+    st.dataframe(df_filtered, use_container_width=True)
 
-    search_query = st.text_input("🔍 Search Bug Title or Description:", "")
-
-    df_display = df_filtered.copy()
-    if search_query:
-        df_display = df_display[
-            df_display['title'].str.contains(search_query, case=False, na=False) |
-            df_display['description'].str.contains(search_query, case=False, na=False)
-        ]
-
-    st.write(f"Showing **{len(df_display)}** filtered bug records.")
-
+    csv_data = df_filtered.to_csv(index=False).encode('utf-8')
     st.download_button(
-        label="📥 Export Filtered Dataset (CSV)",
-        data=df_display.to_csv(index=False).encode('utf-8'),
-        file_name="filtered_bug_records.csv",
+        label="📥 Download Filtered CSV",
+        data=csv_data,
+        file_name="filtered_bug_reports.csv",
         mime="text/csv"
     )
-
-    st.dataframe(df_display, use_container_width=True)
